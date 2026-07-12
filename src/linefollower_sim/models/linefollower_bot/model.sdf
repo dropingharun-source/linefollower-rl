@@ -191,5 +191,15 @@
       <odom_publish_frequency>20</odom_publish_frequency>
       <topic>/cmd_vel</topic>
     </plugin>
+    <!-- Ground-truth pose for RL reward/reset. The DiffDrive odometry above
+         integrates wheel motion and goes stale when an episode reset teleports
+         the robot via /world/.../set_pose; this plugin reads the model's world
+         pose directly. -->
+    <plugin filename="ignition-gazebo-odometry-publisher-system"
+            name="ignition::gazebo::systems::OdometryPublisher">
+      <odom_topic>/model/linefollower_bot/pose_gt</odom_topic>
+      <odom_publish_frequency>30</odom_publish_frequency>
+      <dimensions>2</dimensions>
+    </plugin>
   </model>
 </sdf>
