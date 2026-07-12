@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Save one frame from /camera (sensor_msgs/Image, rgb8) as a PPM file,
-and print a coarse ASCII rendering so the frame can be checked in a terminal."""
+"""Save one frame from an Image topic (rgb8) as a PPM file, and print a
+coarse ASCII rendering so the frame can be checked in a terminal.
+Usage: save_camera_frame.py [out.ppm] [topic]   (defaults: /tmp/frame.ppm /camera)"""
 import sys
 
 import rclpy
@@ -9,11 +10,12 @@ from sensor_msgs.msg import Image
 
 
 class FrameSaver(Node):
-    def __init__(self, out_path):
+    def __init__(self, out_path, topic):
         super().__init__('frame_saver')
         self.out_path = out_path
+        self.topic = topic
         self.done = False
-        self.create_subscription(Image, '/camera', self.callback, 10)
+        self.create_subscription(Image, topic, self.callback, 10)
 
     def callback(self, msg):
         if self.done:
@@ -37,15 +39,16 @@ class FrameSaver(Node):
 
 def main():
     out = sys.argv[1] if len(sys.argv) > 1 else '/tmp/frame.ppm'
+    topic = sys.argv[2] if len(sys.argv) > 2 else '/camera'
     rclpy.init()
-    node = FrameSaver(out)
+    node = FrameSaver(out, topic)
     for _ in range(100):
         rclpy.spin_once(node, timeout_sec=0.2)
         if node.done:
             break
     rclpy.shutdown()
     if not node.done:
-        print('ERROR: no frame received on /camera', file=sys.stderr)
+        print(f'ERROR: no frame received on {topic}', file=sys.stderr)
         sys.exit(1)
 
 
