@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<sdf version="1.8">
+  <model name="track_floor">
+    <static>true</static>
+    <link name="link">
+      <visual name="visual">
+        <geometry>
+          <box><size>4 4 0.002</size></box>
+        </geometry>
+        <material>
+          <ambient>1 1 1 1</ambient>
+          <diffuse>1 1 1 1</diffuse>
+          <specular>0.1 0.1 0.1 1</specular>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>
