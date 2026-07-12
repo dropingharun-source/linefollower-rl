@@ -4,3 +4,4 @@ log/
 __pycache__/
 # generated per-seed by generate_track.py --seed N; spawn pose only matches the last run
 src/linefollower_sim/worlds/track_random.sdf
+training/checkpoints/
