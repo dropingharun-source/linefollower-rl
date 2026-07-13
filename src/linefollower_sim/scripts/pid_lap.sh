@@ -19,6 +19,7 @@ source /opt/ros/humble/setup.bash
 KP="${1:-1.0}"; KD="${2:-0.0}"; KI="${3:-0.0}"; SPEED="${4:-0.15}"
 
 pkill -f '[i]gn gazebo' 2>/dev/null && sleep 2 || true
+pkill -f '[p]arameter_bridge' 2>/dev/null && sleep 1 || true
 
 ign gazebo -r "$PKG/worlds/track_oval.sdf" > /tmp/gz_pidlap.log 2>&1 &
 GZPID=$!

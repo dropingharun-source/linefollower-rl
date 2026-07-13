@@ -12,6 +12,7 @@ source /opt/ros/humble/setup.bash
 
 SEED="${1:-42}"
 pkill -f '[i]gn gazebo' 2>/dev/null && sleep 2 || true
+pkill -f '[p]arameter_bridge' 2>/dev/null && sleep 1 || true
 
 python3 "$PKG/scripts/generate_track.py" --seed "$SEED"
 

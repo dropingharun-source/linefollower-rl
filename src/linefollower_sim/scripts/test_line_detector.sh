@@ -12,6 +12,7 @@ export LIBGL_ALWAYS_SOFTWARE=1
 source /opt/ros/humble/setup.bash
 
 pkill -f '[i]gn gazebo' 2>/dev/null && sleep 2 || true
+pkill -f '[p]arameter_bridge' 2>/dev/null && sleep 1 || true
 
 ign gazebo -s -r -v3 "$PKG/worlds/track_oval.sdf" > /tmp/gz_server.log 2>&1 &
 GZPID=$!

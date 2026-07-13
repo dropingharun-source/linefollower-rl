@@ -24,6 +24,7 @@ for a in "$@"; do
 done
 
 pkill -f '[i]gn gazebo' 2>/dev/null && sleep 2 || true
+pkill -f '[p]arameter_bridge' 2>/dev/null && sleep 1 || true
 
 # restore the oval benchmark in case a random track was generated since
 python3 "$PKG/scripts/generate_track.py" > /dev/null
