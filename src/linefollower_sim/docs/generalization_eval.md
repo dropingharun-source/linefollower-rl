@@ -22,6 +22,17 @@ line. Pace vs the PID, normalized per meter (tracks differ in length):
 home oval.** Nearly 2× faster on unfamiliar ground than the classical
 controller on familiar ground.
 
+## Filmed demo (2026-07-14)
+
+Uncut OBS recording of the pool policy on unseen seed 1, GUI mode
+(`bash scripts/rl_lap.sh --track 1` — launch banner naming the unseen seed
+in frame): 3 complete laps + most of a 4th in 3:56, lap timer showing
+25.4 s / 7.1 m / 0 losses at lap 3 (lap 1 reads 34.1 s because it includes
+~6 s of controller startup; the usual 0.35 m-early lap-timer bias applies,
+see `pid_baseline.md`). Kept locally: `D:\Videos\2026-07-14 15-48-52.mkv`.
+Stills: `docs/evidence/2026-07-14_rl_unseen_seed1_launch_banner.png`,
+`docs/evidence/2026-07-14_rl_unseen_seed1_lap3_complete.png`.
+
 ## The honest surprise
 
 We built random-track-per-episode training (a 16-track pool world) to
