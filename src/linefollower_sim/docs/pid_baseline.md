@@ -59,3 +59,10 @@ recording kept locally (`D:\Videos\2026-07-12 18-10-34.mkv`).
   Irrelevant here (0 losses), but define a debounced loss metric before
   quoting loss counts in the Phase 3 comparison — edge flicker once counted
   15 "losses" for one physical event.
+- The lap detector triggers when the robot is back within 0.35 m of the
+  start point, then re-anchors the start THERE — so a "lap" covers ~6.0 m
+  of the 6.35 m loop (~5 % flattering) and the finish line creeps ~0.35 m
+  backward every lap (spotted 2026-07-14 in the RL footage). The 6.1 m in
+  the table above is the same effect. It cancels out in PID-vs-RL
+  comparisons because both use this script; ground-truth lap times
+  (`test_rl_policy.py`, centerline arc length) are the citable numbers.
