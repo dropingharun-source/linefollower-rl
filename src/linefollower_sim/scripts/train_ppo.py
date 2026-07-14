@@ -57,6 +57,11 @@ def main():
     ap.add_argument('--steps', type=int, default=300000)
     ap.add_argument('--resume', default=None,
                     help="checkpoint .zip to continue from, or 'auto'")
+    ap.add_argument('--pool', type=int, default=0, metavar='N',
+                    help='train on a pool of N random tracks, a random one '
+                         'per episode (launch via rl_train.sh --pool N so '
+                         'the matching world is generated and loaded)')
+    ap.add_argument('--pool-seed', type=int, default=0)
     ap.add_argument('--smoke', action='store_true',
                     help='tiny n_steps, nothing saved — plumbing test only')
     args = ap.parse_args()
@@ -64,7 +69,13 @@ def main():
     os.makedirs(CKPT_DIR, exist_ok=True)
     os.makedirs(TB_DIR, exist_ok=True)
 
-    raw = LineFollowEnv(track='oval', world='track_oval')
+    if args.pool:
+        run_name = 'ppo_pool'
+        raw = LineFollowEnv(track='pool', pool_seed=args.pool_seed,
+                            pool_size=args.pool)
+    else:
+        run_name = 'ppo_oval'
+        raw = LineFollowEnv(track='oval', world='track_oval')
     env = Monitor(raw)
 
     resume_path = None
@@ -90,18 +101,18 @@ def main():
     callbacks = [StopWheelsOnUpdate(raw)]
     if not args.smoke:
         callbacks.append(CheckpointCallback(
-            save_freq=5000, save_path=CKPT_DIR, name_prefix='ppo_oval'))
+            save_freq=5000, save_path=CKPT_DIR, name_prefix=run_name))
 
     try:
         model.learn(total_timesteps=args.steps,
                     callback=callbacks,
-                    tb_log_name='smoke' if args.smoke else 'ppo_oval',
+                    tb_log_name='smoke' if args.smoke else run_name,
                     reset_num_timesteps=resume_path is None)
     except KeyboardInterrupt:
         print('\ninterrupted — saving before exit')
     finally:
         if not args.smoke:
-            last = os.path.join(CKPT_DIR, 'ppo_oval_last')
+            last = os.path.join(CKPT_DIR, run_name + '_last')
             model.save(last)
             print('model saved:', last + '.zip')
             print("resume with: python3 scripts/train_ppo.py --resume auto")

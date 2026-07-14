@@ -34,6 +34,13 @@ Reset: teleports the robot back to the spawn pose via the world's set_pose
 The track centerline comes from generate_track.py (same folder): 'oval' for
 the benchmark oval, or an int seed for a random track — the launcher must
 have generated and loaded that same track; the env only knows the math.
+
+track='pool' (Phase 3 step 3): the launcher loads worlds/track_pool.sdf —
+pool_size random tracks on a grid of panels in ONE world — and every reset
+teleports the robot to a RANDOM track's spawn. Same proven set_pose path as
+the single-track reset, just 16 destinations instead of 1; no world reloads,
+no runtime scene edits. pool_seed/pool_size must match what the launcher
+passed to generate_track.py --pool.
 """
 import math
 import os
@@ -96,17 +103,24 @@ class _Polyline:
 class LineFollowEnv(gym.Env):
     metadata = {'render_modes': []}
 
-    def __init__(self, track='oval', world='track_oval', max_steps=1000):
+    def __init__(self, track='oval', world='track_oval', max_steps=1000,
+                 pool_seed=0, pool_size=16):
         super().__init__()
         self.observation_space = spaces.Box(0, 255, (64, 64, 1), np.uint8)
         self.action_space = spaces.Box(-1.0, 1.0, (2,), np.float32)
         self.max_steps = max_steps
         self.world = world
 
-        pts = (generate_track.oval_points() if track == 'oval'
-               else generate_track.random_points(int(track)))
-        self.centerline = _Polyline(pts)
-        self.spawn = generate_track.spawn_pose(pts)  # (x, y, yaw)
+        if track == 'pool':
+            all_pts = generate_track.pool_tracks(pool_seed, pool_size)
+        else:
+            all_pts = [generate_track.oval_points() if track == 'oval'
+                       else generate_track.random_points(int(track))]
+        # one (centerline, spawn) per track; reset() picks one
+        self._pool = [(_Polyline(p), generate_track.spawn_pose(p))
+                      for p in all_pts]
+        self.centerline, self.spawn = self._pool[0]
+        self._track_idx = 0
 
         if not rclpy.ok():
             rclpy.init()
@@ -184,6 +198,9 @@ class LineFollowEnv(gym.Env):
     # ---- Gym API ----------------------------------------------------------
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
+        if len(self._pool) > 1:  # pool mode: a random track each episode
+            self._track_idx = int(self.np_random.integers(len(self._pool)))
+            self.centerline, self.spawn = self._pool[self._track_idx]
         self._publish_wheels(-1.0, -1.0)  # wheel speed 0
         self._wait_frames(2)              # let the stop reach the sim
         self._teleport_to_spawn()
@@ -193,7 +210,7 @@ class LineFollowEnv(gym.Env):
         d, s = self.centerline.project(*pose)
         self._last_s = s
         self._steps = 0
-        return obs, {'centerline_dist': d}
+        return obs, {'centerline_dist': d, 'track_idx': self._track_idx}
 
     def step(self, action):
         self._publish_wheels(action[0], action[1])
