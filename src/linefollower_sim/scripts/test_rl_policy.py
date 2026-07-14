@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """Headless eval of the trained policy through LineFollowEnv (the sim stack
-must be up — test_gym_env.sh's launch set). One deterministic episode;
-reports distance covered, worst centerline offset, and lap count. The
-FILMED laps use rl_lap.sh + lap_metrics like the PID did; this is the
-plumbing/behavior check.
+must be up — test_rl_policy.sh launches the matching world). One
+deterministic episode; reports distance covered, worst centerline offset,
+and lap count. The FILMED laps use rl_lap.sh + lap_metrics like the PID
+did; this is the plumbing/behavior check.
+
+--track N evaluates on random track seed N (launch via test_rl_policy.sh
+--track N so the same track is loaded in Gazebo). Seeds below 100000 are
+guaranteed never to be in a training pool — that's the unseen-track eval.
 """
+import argparse
 import glob
 import os
 import sys
@@ -21,23 +26,34 @@ CKPT_DIR = os.path.join(REPO, 'training', 'checkpoints')
 
 
 def main():
-    stochastic = '--stochastic' in sys.argv
-    args = [a for a in sys.argv[1:] if not a.startswith('--')]
+    ap = argparse.ArgumentParser()
+    ap.add_argument('model', nargs='?', default=None,
+                    help='model .zip; default: newest *_last.zip')
+    ap.add_argument('--track', default='oval',
+                    help="'oval' or a random-track seed; must match the "
+                         'world the launcher loaded')
+    ap.add_argument('--stochastic', action='store_true')
+    ap.add_argument('--trace', action='store_true')
+    args = ap.parse_args()
+    stochastic = args.stochastic
+
     zips = sorted(glob.glob(os.path.join(CKPT_DIR, '*_last.zip')),
                   key=os.path.getmtime)
-    model_path = args[0] if args else (zips or [None])[-1]
+    model_path = args.model or (zips or [None])[-1]
     if not model_path:
         sys.exit('no *_last.zip in ' + CKPT_DIR)
     model = PPO.load(model_path, device='cpu')
-    print('evaluating', model_path,
+    print('evaluating', model_path, 'on track', args.track,
           '(stochastic — training-style sampling)' if stochastic
           else '(deterministic)')
 
-    env = LineFollowEnv(track='oval', world='track_oval', max_steps=900)
+    # generate_track.py --seed N names its world "track_random"
+    world = 'track_oval' if args.track == 'oval' else 'track_random'
+    env = LineFollowEnv(track=args.track, world=world, max_steps=900)
     obs, info = env.reset()
     total_progress, worst_d, steps = 0.0, 0.0, 0
     terminated = truncated = False
-    trace = '--trace' in sys.argv
+    trace = args.trace
     while not (terminated or truncated):
         action, _ = model.predict(obs, deterministic=not stochastic)
         obs, r, terminated, truncated, info = env.step(action)
