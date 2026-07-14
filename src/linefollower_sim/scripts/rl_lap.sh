@@ -4,22 +4,38 @@
 # Gazebo (god view), /camera (what the policy sees), THIS terminal with the
 # lap timer in frame.
 #
-# Usage: bash scripts/rl_lap.sh [model.zip]   default: newest *_last.zip
+# Usage: bash scripts/rl_lap.sh [--track N] [model.zip]
+#   default model: newest *_last.zip
+#   --track N: drive random track seed N instead of the oval — the filmed
+#              UNSEEN-track demo (small seeds are never in a training pool)
 set -e
 PKG=$(cd "$(dirname "$0")/.." && pwd)
 export IGN_GAZEBO_RESOURCE_PATH="$PKG/models"
 export LIBGL_ALWAYS_SOFTWARE=1
 source /opt/ros/humble/setup.bash
 
-MODEL="${1:-}"
+TRACK="oval"
+MODEL=""
+PREV=""
+for a in "$@"; do
+  if [ "$PREV" = "--track" ]; then TRACK="$a"
+  elif [ "$a" != "--track" ]; then MODEL="$a"; fi
+  PREV="$a"
+done
 
 pkill -f '[i]gn gazebo' 2>/dev/null && sleep 2 || true
 pkill -f '[p]arameter_bridge' 2>/dev/null && sleep 1 || true
 
-# restore the oval benchmark in case a random track was generated since
-python3 "$PKG/scripts/generate_track.py" > /dev/null
+if [ "$TRACK" = "oval" ]; then
+  # restore the oval benchmark in case a random track was generated since
+  python3 "$PKG/scripts/generate_track.py" > /dev/null
+  WORLD="$PKG/worlds/track_oval.sdf"
+else
+  python3 "$PKG/scripts/generate_track.py" --seed "$TRACK" > /dev/null
+  WORLD="$PKG/worlds/track_random.sdf"
+fi
 
-ign gazebo -r "$PKG/worlds/track_oval.sdf" > /tmp/gz_rllap.log 2>&1 &
+ign gazebo -r "$WORLD" > /tmp/gz_rllap.log 2>&1 &
 GZPID=$!
 ros2 run ros_gz_bridge parameter_bridge \
   /cmd_vel@geometry_msgs/msg/Twist@ignition.msgs.Twist \
@@ -35,7 +51,12 @@ RLPID=$!
 trap 'kill $RLPID $RQTPID $BRPID $GZPID 2>/dev/null' EXIT
 
 echo ""
-echo "=== TRAINED POLICY on the oval (PID baseline to beat: 40.4 s/lap) ==="
+if [ "$TRACK" = "oval" ]; then
+  echo "=== TRAINED POLICY on the oval (PID baseline to beat: 40.4 s/lap) ==="
+else
+  echo "=== TRAINED POLICY on UNSEEN random track, seed $TRACK ==="
+  echo "=== (seed $TRACK was never in any training set) ==="
+fi
 echo "=== Ctrl-C stops everything ==="
 echo ""
 python3 "$PKG/scripts/lap_metrics.py"
