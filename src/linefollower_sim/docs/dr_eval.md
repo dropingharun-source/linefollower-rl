@@ -15,7 +15,9 @@ ceiling from the first rollout and settled at **276**, *above* the non-DR
 300k of 350k by the recurring Gazebo transport death (third occurrence;
 model auto-saved, as designed — writeup pending). Curve was flat →
 declared converged. Model: `training/checkpoints/ppo_pool_dr_last.zip`.
-TB run: `ppo_pool_dr_0`.
+TB run: `ppo_pool_dr_0`. Curve screenshot with all three runs (oval →
+pool → DR, one continuous arc):
+`docs/evidence/2026-07-14_tb_full_training_arc.png`.
 
 ## Evaluation — 7/7 clean
 
