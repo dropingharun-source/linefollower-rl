@@ -62,6 +62,9 @@ def main():
                          'per episode (launch via rl_train.sh --pool N so '
                          'the matching world is generated and loaded)')
     ap.add_argument('--pool-seed', type=int, default=0)
+    ap.add_argument('--dr', action='store_true',
+                    help='domain randomization: per-episode camera-angle/'
+                         'lighting/noise/motor-gain nuisances (step 4)')
     ap.add_argument('--smoke', action='store_true',
                     help='tiny n_steps, nothing saved — plumbing test only')
     args = ap.parse_args()
@@ -70,12 +73,12 @@ def main():
     os.makedirs(TB_DIR, exist_ok=True)
 
     if args.pool:
-        run_name = 'ppo_pool'
+        run_name = 'ppo_pool_dr' if args.dr else 'ppo_pool'
         raw = LineFollowEnv(track='pool', pool_seed=args.pool_seed,
-                            pool_size=args.pool)
+                            pool_size=args.pool, dr=args.dr)
     else:
-        run_name = 'ppo_oval'
-        raw = LineFollowEnv(track='oval', world='track_oval')
+        run_name = 'ppo_oval_dr' if args.dr else 'ppo_oval'
+        raw = LineFollowEnv(track='oval', world='track_oval', dr=args.dr)
     env = Monitor(raw)
 
     resume_path = None

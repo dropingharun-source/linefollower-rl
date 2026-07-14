@@ -34,6 +34,9 @@ def main():
                          'world the launcher loaded')
     ap.add_argument('--stochastic', action='store_true')
     ap.add_argument('--trace', action='store_true')
+    ap.add_argument('--dr', action='store_true',
+                    help='evaluate WITH domain randomization active '
+                         '(robustness check)')
     args = ap.parse_args()
     stochastic = args.stochastic
 
@@ -49,7 +52,8 @@ def main():
 
     # generate_track.py --seed N names its world "track_random"
     world = 'track_oval' if args.track == 'oval' else 'track_random'
-    env = LineFollowEnv(track=args.track, world=world, max_steps=900)
+    env = LineFollowEnv(track=args.track, world=world, max_steps=900,
+                        dr=args.dr)
     obs, info = env.reset()
     total_progress, worst_d, steps = 0.0, 0.0, 0
     terminated = truncated = False

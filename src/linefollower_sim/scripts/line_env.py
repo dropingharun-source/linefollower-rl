@@ -41,6 +41,19 @@ teleports the robot to a RANDOM track's spawn. Same proven set_pose path as
 the single-track reset, just 16 destinations instead of 1; no world reloads,
 no runtime scene edits. pool_seed/pool_size must match what the launcher
 passed to generate_track.py --pool.
+
+dr=True (Phase 3 step 4, domain randomization): per-episode nuisances,
+applied entirely in this file's observation/action path — the sim itself
+never changes, so long-run stability is untouched:
+  camera angle   image shifted ±4 px vertical / ±2 px horizontal
+                 (FOV is 1.204 rad / 64 px ≈ 1.08°/px, so ±4 px ≈ ±4.3° —
+                 the plan's ±3–5° mount-angle jitter, first-order approx)
+  lighting       brightness offset ±25 and contrast ×[0.8, 1.2]
+  sensor noise   gaussian pixel noise, sigma drawn per episode from [0, 8],
+                 resampled every frame
+  motor gap      each wheel's commanded speed × its own gain in [0.9, 1.1]
+                 (covers motor asymmetry AND friction/slip variation — the
+                 form floor-friction differences actually take at the axle)
 """
 import math
 import os
@@ -69,6 +82,14 @@ OFF_LINE_PENALTY = -10.0
 PROGRESS_SCALE = 10.0  # reward per meter of centerline progress
 STEP_COST = 0.01
 FRAME_TIMEOUT_S = 15.0  # wall seconds without a camera frame -> sim is dead
+
+# domain randomization ranges (see module docstring)
+DR_SHIFT_V_PX = 4     # camera pitch jitter, ~1.08 deg per px
+DR_SHIFT_H_PX = 2     # camera yaw jitter
+DR_BRIGHT = 25.0      # brightness offset (uint8 scale)
+DR_CONTRAST = 0.2     # contrast in [1-x, 1+x]
+DR_NOISE_MAX = 8.0    # per-episode pixel-noise sigma drawn from [0, this]
+DR_GAIN = 0.1         # per-wheel speed gain in [1-x, 1+x]
 
 
 class _Polyline:
@@ -104,12 +125,14 @@ class LineFollowEnv(gym.Env):
     metadata = {'render_modes': []}
 
     def __init__(self, track='oval', world='track_oval', max_steps=1000,
-                 pool_seed=0, pool_size=16):
+                 pool_seed=0, pool_size=16, dr=False):
         super().__init__()
         self.observation_space = spaces.Box(0, 255, (64, 64, 1), np.uint8)
         self.action_space = spaces.Box(-1.0, 1.0, (2,), np.float32)
         self.max_steps = max_steps
         self.world = world
+        self.dr = dr
+        self._dr_neutral()
 
         if track == 'pool':
             all_pts = generate_track.pool_tracks(pool_seed, pool_size)
@@ -172,12 +195,46 @@ class LineFollowEnv(gym.Env):
             return self._frame.copy()
 
     def _publish_wheels(self, left, right):
-        vl = (float(left) + 1.0) / 2.0 * WHEEL_MAX
-        vr = (float(right) + 1.0) / 2.0 * WHEEL_MAX
+        vl = (float(left) + 1.0) / 2.0 * WHEEL_MAX * self._dr_gain[0]
+        vr = (float(right) + 1.0) / 2.0 * WHEEL_MAX * self._dr_gain[1]
         t = Twist()
         t.linear.x = (vl + vr) / 2.0
         t.angular.z = (vr - vl) / WHEEL_SEP
         self.cmd_pub.publish(t)
+
+    # ---- domain randomization -------------------------------------------
+    def _dr_neutral(self):
+        self._dr_shift = (0, 0)
+        self._dr_bright = 0.0
+        self._dr_contrast = 1.0
+        self._dr_noise = 0.0
+        self._dr_gain = (1.0, 1.0)
+
+    def _dr_sample(self):
+        rng = self.np_random
+        self._dr_shift = (
+            int(rng.integers(-DR_SHIFT_V_PX, DR_SHIFT_V_PX + 1)),
+            int(rng.integers(-DR_SHIFT_H_PX, DR_SHIFT_H_PX + 1)))
+        self._dr_bright = float(rng.uniform(-DR_BRIGHT, DR_BRIGHT))
+        self._dr_contrast = float(rng.uniform(1 - DR_CONTRAST, 1 + DR_CONTRAST))
+        self._dr_noise = float(rng.uniform(0.0, DR_NOISE_MAX))
+        self._dr_gain = (float(rng.uniform(1 - DR_GAIN, 1 + DR_GAIN)),
+                         float(rng.uniform(1 - DR_GAIN, 1 + DR_GAIN)))
+
+    def _augment(self, img):
+        """Apply this episode's nuisances to one camera frame."""
+        if not self.dr:
+            return img
+        a = img.astype(np.float32)
+        dv, dh = self._dr_shift
+        if dv or dh:  # edge-replicated shift = small mount-angle change
+            p = DR_SHIFT_V_PX
+            pad = np.pad(a, ((p, p), (p, p), (0, 0)), mode='edge')
+            a = pad[p + dv:p + dv + 64, p + dh:p + dh + 64]
+        a = (a - 128.0) * self._dr_contrast + 128.0 + self._dr_bright
+        if self._dr_noise > 0:  # fresh noise every frame
+            a = a + self.np_random.normal(0.0, self._dr_noise, a.shape)
+        return np.clip(a, 0, 255).astype(np.uint8)
 
     def _teleport_to_spawn(self):
         x, y, yaw = self.spawn
@@ -201,10 +258,12 @@ class LineFollowEnv(gym.Env):
         if len(self._pool) > 1:  # pool mode: a random track each episode
             self._track_idx = int(self.np_random.integers(len(self._pool)))
             self.centerline, self.spawn = self._pool[self._track_idx]
+        if self.dr:  # new nuisance draw every episode
+            self._dr_sample()
         self._publish_wheels(-1.0, -1.0)  # wheel speed 0
         self._wait_frames(2)              # let the stop reach the sim
         self._teleport_to_spawn()
-        obs = self._wait_frames(3)        # settle + flush stale frames
+        obs = self._augment(self._wait_frames(3))  # settle + flush stale
         with self._lock:
             pose = self._pose
         d, s = self.centerline.project(*pose)
@@ -214,7 +273,7 @@ class LineFollowEnv(gym.Env):
 
     def step(self, action):
         self._publish_wheels(action[0], action[1])
-        obs = self._wait_frames(CONTROL_EVERY)
+        obs = self._augment(self._wait_frames(CONTROL_EVERY))
         with self._lock:
             pose = self._pose
         d, s = self.centerline.project(*pose)
