@@ -10,8 +10,16 @@
 //   "L:<pwm> R:<pwm>"  set both wheels, pwm in [-255..255], negative = reverse
 //   "S"                stop both motors
 //   "D:<l>,<r>"        set per-motor deadbands (saved to EEPROM)
+//   "W:<l>,<r>"        raw PWM 0..MAX_PWM, no deadband — calibration only
 //   "G"                print current deadbands
 //   "P"                replies "PONG" (connection test)
+//
+// Voltage cap (MAX_PWM): this robot runs a 3S 18650 pack (~11-12.6 V) but the
+// TT motors are 6 V. PWM sets the motor's average voltage as (pwm/255)*Vsupply,
+// so we never let pwm exceed MAX_PWM, chosen so the motor tops out near 6 V.
+// Recompute once you can measure the pack under load:
+//     MAX_PWM = 255 * 6 / (Vpack - 2)      (the ~2 V is the L298N's own drop)
+// Erring low is safe (just slower); too high cooks the motors.
 //
 // Deadband: cheap TT motors hum but don't turn below some PWM threshold —
 // the predicted #1 sim-to-real gap. Requested speeds are remapped so that
@@ -37,6 +45,11 @@ const int IN4 = 8;
 
 const unsigned long TIMEOUT_MS = 500;
 const byte EEPROM_MAGIC = 0x42;  // addr 0; deadbands live at addr 1 and 2
+
+// Hard ceiling on PWM so a 3S 18650 pack can't push the 6 V TT motors past
+// ~6 V. 140/255 = 55%; at a fully-charged 12.6 V pack (~11 V after the L298N)
+// that is ~6.0 V. Conservative on purpose — raise it after measuring the pack.
+const int MAX_PWM = 140;
 
 int deadL = 0;
 int deadR = 0;
@@ -65,17 +78,33 @@ void stopMotors() {
   moving = false;
 }
 
+int clampPwm(int v) {
+  return v < 0 ? 0 : (v > MAX_PWM ? MAX_PWM : v);
+}
+
 int remap(int v, int dead) {
-  // 0 stays 0; 1..255 maps linearly onto dead..255
+  // 0 stays 0; 1..255 maps linearly onto dead..MAX_PWM (the voltage ceiling)
   if (v == 0) return 0;
-  return dead + (int)((long)v * (255 - dead) / 255);
+  return dead + (int)((long)v * (MAX_PWM - dead) / 255);
 }
 
 void driveMotor(int pwm, int dead, int en, int inA, int inB) {
-  int mag = remap(min(abs(pwm), 255), dead);
+  int mag = clampPwm(remap(min(abs(pwm), 255), dead));  // clamp = belt & braces
   digitalWrite(inA, pwm > 0 ? HIGH : LOW);
   digitalWrite(inB, pwm > 0 ? LOW : (pwm < 0 ? HIGH : LOW));
   analogWrite(en, mag);
+}
+
+void rawDrive(int l, int r) {
+  // Raw PWM straight to the motors, bypassing the deadband remap — used by
+  // the calibration wizard to find each motor's true start threshold. Still
+  // clamped to MAX_PWM so calibration can't overvolt either.
+  l = clampPwm(l); r = clampPwm(r);
+  digitalWrite(IN1, l > 0 ? HIGH : LOW); digitalWrite(IN2, LOW);
+  analogWrite(ENA, l);
+  digitalWrite(IN3, r > 0 ? HIGH : LOW); digitalWrite(IN4, LOW);
+  analogWrite(ENB, r);
+  moving = (l != 0 || r != 0);
 }
 
 void drive(int l, int r) {
@@ -102,6 +131,12 @@ void handleLine(char* s) {
     EEPROM.update(2, (byte)deadR);
     Serial.print("DEAD "); Serial.print(deadL);
     Serial.print(" "); Serial.println(deadR);
+    lastCmdMs = millis(); return;
+  }
+  if (s[0] == 'W' && s[1] == ':') {  // raw PWM, no deadband (calibration)
+    char* comma = strchr(s + 2, ',');
+    if (!comma) { Serial.println("ERR"); return; }
+    rawDrive(atoi(s + 2), atoi(comma + 1));
     lastCmdMs = millis(); return;
   }
   if (s[0] == 'L' && s[1] == ':') {

@@ -65,10 +65,13 @@ def calibrate(ser):
     print("For each motor: PWM ramps up slowly - press SPACE the moment")
     print("the wheel starts to turn. Esc aborts.\n")
     dead = {}
-    for name, fmt in (("LEFT", "L:{} R:0"), ("RIGHT", "L:0 R:{}")):
+    # W: sends RAW pwm (bypasses the deadband remap) so we measure each motor's
+    # true start threshold. The firmware still clamps it to MAX_PWM (~6 V), so
+    # if a wheel hasn't moved by the top of the ramp, that's a real problem.
+    for name, fmt in (("LEFT", "W:{},0"), ("RIGHT", "W:0,{}")):
         input(f"{name} motor - press Enter to start the ramp...")
         found = None
-        for pwm in range(20, 200, 2):
+        for pwm in range(20, 145, 2):
             send(ser, fmt.format(pwm))
             print(f"\r  {name} PWM = {pwm}   ", end="", flush=True)
             t0 = time.time()
@@ -86,7 +89,7 @@ def calibrate(ser):
                 break
         send(ser, "S")
         if not found:
-            print(f"\n{name}: no motion by PWM 200 - check wiring/battery!")
+            print(f"\n{name}: no motion by the 6 V cap - check wiring/battery!")
             return
         dead[name] = max(0, found - 2)
         print(f"\n{name} deadband = {dead[name]}")
